@@ -1,0 +1,197 @@
+
+
+```{r}
+library(lme4)
+library(dplyr)
+library(ggplot2)
+```
+
+
+```{r}
+df <- read.csv("/Users/daniellaye/Desktop/regression/match_sai_by_student_fixed_repeat.csv")
+df_stu <- data.frame(df, na.string = "", stringsAsFactors = FALSE)
+
+```
+
+
+```{r}
+# For every student
+# Make step slices, each step slice distinguished by sumCorrect
+# might need to change how step slice is defined
+all <- df_stu %>%
+  select(Anon.Student.Id, Time, Problem.Name, KC..Field., Outcome, error_type, KC_toward) %>%
+  group_by(Anon.Student.Id) %>% 
+  mutate(correct = ifelse(Outcome == "CORRECT", 1, 0),
+                  sumCorrect = cumsum(correct))
+
+
+all[all$correct == 0, ]$sumCorrect <- all[all$correct == 0, ]$sumCorrect + 1 
+
+```
+
+
+```{r}
+
+# for each student, for each step slice
+all <- all %>% group_by(Anon.Student.Id, sumCorrect) %>% 
+  mutate(KC_name = KC..Field.[length(KC..Field.)],  # KC_name is the KC student is working toward, 
+                                                    # KC of last row in step slice
+         first_error = error_type[1],               # first error in the step slice
+         hint_used = ifelse("HINT" %in% Outcome, "hint", ""), # Whether stu has used hint in that step slice
+        # gen = ifelse( ( ("INCORRECT" %in% Outcome) |  ("HINT" %in% Outcome) ), 1, 0),
+         gen = ifelse( (Outcome[1] == "INCORRECT" | Outcome[1] == "HINT"), 1, 0), # general error
+       #  firstHint = ifelse("HINT" %in% Outcome, 1, 0),
+         firstHint = ifelse(Outcome[1] == "HINT", 1, 0), 
+         
+         totalCor = sum(Outcome == "CORRECT"),                  # Total number of CORRECT in step slice
+         totalIncorrect = sum(Outcome == "INCORRECT"),          # Total number of INCORRECT
+         totalHint = sum(Outcome == "HINT"),                    # Total number of hints used
+         totalInc = sum(error_type == "incorrect"),             # ...
+         totalOut = sum(error_type == "out of graph"),
+         totalWhen = sum(error_type == "when error"),
+         totalMis = sum(error_type == "misapplied"),
+         totalWhere = sum(error_type == "where error"),
+         totalWild = sum(error_type == "wild error"),
+         total = totalHint + totalInc + totalOut + totalWhen + totalMis + totalWhere + totalWild) %>% 
+  distinct(all, .keep_all=TRUE) # Keep only first row for each step slice, so #row = #step slice
+
+
+View(all)
+
+
+```
+
+
+
+
+```{r}
+# Make a copy
+all_ <- all
+
+all_[all_$correct == 1, ]$first_error <- "correct"
+all_ <- all_ %>% select(Anon.Student.Id, Time, sumCorrect, KC_name, gen, firstHint, first_error, hint_used, totalCor, totalIncorrect, totalHint, totalInc, totalOut, totalWhen, totalMis, totalWhere, totalWild, total) 
+
+
+View(all_)
+
+```
+
+
+
+```{r}
+# Add new columns indicating which first error
+all_ <- all_ %>% mutate(firstWhen = ifelse(first_error == "when error", 1, 0),
+                        firstInc = ifelse(first_error == "incorrect", 1, 0),
+                        firstOut = ifelse(first_error == "out of graph", 1, 0),
+                        firstMis = ifelse(first_error == "misapplied", 1, 0),
+                        firstWhere = ifelse(first_error == "where error", 1, 0),
+                        firstWild = ifelse(first_error == "wild error", 1, 0)
+                        
+                        )
+View(all_)
+```
+
+
+
+
+```{r}
+# Count opp for each student:
+# For each student, for each KC being worked toward, count number of step slice(rows)
+all_ <- all_ %>% group_by(Anon.Student.Id, KC_name) %>% 
+  mutate(opp = seq.int(n())) %>% arrange(by_group = KC_name) 
+
+
+all_ <- all_[all_$KC_name != "", ]
+all_$opp <- as.factor(all_$opp)
+View(all_)
+
+
+```
+
+
+```{r}
+#all_kc <- all_ %>% select(KC_name, gen, opp) # %>% arrange(by_group = opp) 
+#all_kc <- subset(all_, select = c(KC_name, gen, opp, first_error, firstHint))
+#View(all_kc)
+
+```
+
+
+Aggregated across KC:
+
+```{r}
+# For opp = 1, 2...
+all_kc <- all_ %>% group_by(opp) %>% summarise(n = n(), 
+                                                 sumGen = sum(gen), rate = sumGen/n, 
+                                                 sumHint = sum(firstHint), rateHint = sumHint/n, 
+                                                 sumWhen = sum(firstWhen), rateWhen = sumWhen/n, 
+                                                 sumWhere = sum(firstWhere), rateWhere = sumWhere/n,
+                                                 sumInc = sum(firstInc), rateInc = sumInc/n,
+                                                 sumOut= sum(firstOut), rateOut = sumOut/n,
+                                                 sumMis = sum(firstMis), rateMis = sumMis/n,
+                                                 sumWild = sum(firstWild), rateWild = sumWild/n
+                                                 )
+all_kc
+
+
+```
+
+
+```{r}
+
+# Plot
+all_kc$opp <- as.numeric(all_kc$opp)
+ggplot(all_kc) + geom_line(aes(x = opp, y = rate), color = "black") + 
+                 geom_line(aes(x = opp, y = rateHint), color = "purple") + 
+                 geom_line(aes(x = opp, y = rateWhen), color = "pink") +
+                 geom_line(aes(x = opp, y = rateWhere), color = "orange") +
+                 geom_line(aes(x = opp, y = rateInc), color = "brown") +
+                 geom_line(aes(x = opp, y = rateOut), color = "blue") +
+                 geom_line(aes(x = opp, y = rateMis), color = "green") +
+                 geom_line(aes(x = opp, y = rateWild), color = "lightblue") + xlim(1, 25) + ylim(0, 0.35) + theme(legend.position = "bottom")
+
+
+
+
+```
+
+
+```{r}
+
+```
+
+
+
+
+
+View this by individual KC:
+
+```{r}
+ind_kc <- all_ %>% group_by(KC_name, opp) %>% summarise(n = n(), 
+                                                 sumGen = sum(gen), rate = sumGen/n, 
+                                                 sumHint = sum(firstHint), rateHint = sumHint/n, 
+                                                 sumWhen = sum(firstWhen), rateWhen = sumWhen/n, 
+                                                 sumWhere = sum(firstWhere), rateWhere = sumWhere/n,
+                                                 sumInc = sum(firstInc), rateInc = sumInc/n,
+                                                 sumOut= sum(firstOut), rateOut = sumOut/n,
+                                                 sumMis = sum(firstMis), rateMis = sumMis/n,
+                                                 sumWild = sum(firstWild), rateWild = sumWild/n
+                                                 )
+ind_kc
+#all_kc2$KC_name <- as.factor(KC_name)
+
+ind_kc$opp <- as.numeric(ind_kc$opp)
+ggplot(ind_kc) + #geom_line(aes(x = opp, y = rate), color = "black") + 
+                  geom_line(aes(x = opp, y = rateHint), color = "purple") + 
+                  geom_line(aes(x = opp, y = rateWhen), color = "pink") +
+                  geom_line(aes(x = opp, y = rateWhere), color = "orange") +
+                  geom_line(aes(x = opp, y = rateInc), color = "brown") +
+                  geom_line(aes(x = opp, y = rateOut), color = "blue") +
+                  geom_line(aes(x = opp, y = rateMis), color = "green") +
+                  geom_line(aes(x = opp, y = rateWild), color = "lightblue") + xlim(1, 25) + ylim(0, 0.5) + facet_wrap( ~KC_name, nrow = 4) 
+
+
+
+```
+
+
