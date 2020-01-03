@@ -1,0 +1,173 @@
+
+
+# Simulation
+
+```{r}
+library(dplyr)
+library(lme4)
+library(stringi)
+library(ggplot2)
+```
+
+
+```{r}
+# number of obvservations, outcome of 1 with probability p
+bern <- function(nob, p){
+  v <- rbinom(nob, 1, p)
+  return(v)
+}
+
+```
+
+```{r}
+
+
+one_student <- function(){
+
+
+intercept <- 0.4
+learning_rate <- 0.05
+opportunity <- seq(1:6)
+nobs <- 8 # for each opp, do 8 observations
+
+out_opp_ps <- rep(1:6, each = 8) 
+
+# for each opp
+res_o <- numeric(0)
+for (o in opportunity){
+  p_o <- intercept + learning_rate * o
+  print("o")
+  print(o)
+  print("p")
+  print(p_o)
+  sim_o <- bern(nobs, p_o)
+
+
+  for (i in seq(1, length(sim_o))){
+    if(sim_o[i] == 0){
+      t <- bern(1, 0.1)
+      sim_o[i] <- t
+
+    }
+
+  }
+  res_o <- c(res_o, sim_o)
+ 
+  
+}
+
+return(data.frame(out_opp_ps, res_o ))
+
+}
+
+
+```
+
+
+
+```{r}
+# generate n number of students
+gen_students <- function(nstudent){
+  s <- data.frame(opp = numeric(), outcome = numeric()) 
+  for (i in seq(1:nstudent)){
+    s <- rbind(s, one_student())
+  }
+  
+  # assign IDs
+  
+  id <- stri_rand_strings(nstudent, 10)
+  id <- rep(id, each = 48)
+#  print(id)
+  
+  return(data.frame(id, s))
+}
+
+```
+
+
+
+
+
+# changing some 1 to 0, with one more column
+```{r}
+
+gen_students_h <- function(nstudent){
+  dh <- gen_students(nstudent)
+  dh$res_o2 <- dh$res_o
+
+  
+  for (i in seq(1:nrow(dh))){
+    if((dh$res_o2)[i] == 1){
+     t <- as.numeric(bern(1,0.9))
+     dh[i, ]$res_o2 <- t
+    }
+  }
+  return(dh)
+
+}
+
+
+```
+
+
+
+
+
+# Test case with 1 student
+```{r}
+s_one = gen_students(1)
+#ss$out_opp_ps
+s_one %>% group_by(out_opp_ps) %>% summarise(correct_proportion = sum(res_o)/n())
+
+```
+
+
+
+
+
+```{r}
+# orig
+distr <- gen_students_h(100)
+
+copy <- distr 
+copy <- copy[order(copy$out_opp_ps), ]
+res <- copy %>% group_by(out_opp_ps) %>% summarise(frequency = sum(res_o), count = n(), correct_rate = (frequency/count), frequency_2 = sum(res_o2), correct_rate_2= frequency_2/count )
+res
+
+
+
+# plot
+
+
+orig_dist <- data.frame(res$out_opp_ps, res$correct_rate, res$correct_rate_2)
+ggplot(orig_dist) + geom_line(aes(x = res.out_opp_ps, y = res.correct_rate, col = "orig")) + geom_line(aes(x = res.out_opp_ps, y = res.correct_rate_2, col = "new")) 
+
+
+#+ labs(x = "opp", y = "correct rate") + scale_color_manual(labels = c("new", "orig"), values = c("red", "black")) #+ geom_line(aes(x = res.out_opp_ps, y = res.correct_rate_2))
+
+
+
+
+```
+
+# fit models to each datasets
+```{r}
+distr$KC <- as.factor("KC")
+distr$out_opp_ps <- as.factor(distr$out_opp_ps)
+#distr
+
+distr$res_o[c(1:10)] = 0.5
+#distr$res_o
+#glmer(res_o ~ ( 1 | id ) + KC + KC: out_opp_ps - 1 , data = distr, family=binomial())
+res <- glmer(res_o ~ ( 1 | id ) + out_opp_ps   , data = distr, family=binomial())
+#coef(res)
+#plot(res)
+#reg.orig_with_when <- glmer( correct ~ (1|Anon.Student.Id) + KC..Field. + KC..Field.:OPP - 1,
+                 #     data=df_n_v, family=binomial())
+summary(res)
+
+```
+
+
+
+
